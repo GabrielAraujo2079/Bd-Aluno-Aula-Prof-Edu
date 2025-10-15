@@ -10,3 +10,5 @@ Paulo Vitor Macieira Carvalho (2508725)
 Proposta da Atividade: Criar uma aplicação em typescript capaz de calcular faltas e médias das notas em typescript, armazenando os alunos em CSV e os boletins em TXT. 
 
 ![alt text](Passo1.png)
+
+#

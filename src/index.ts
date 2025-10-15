@@ -1,231 +1,184 @@
 import * as readline from 'readline';
+import * as fs from 'fs';
+import * as path from 'path';
 
-class Disciplina {
-  private nome: string;
-  private notas: number[];
-  private faltas: number;
-  private media: number;
-  private situacao: string;
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout
+});
 
-  constructor(nome: string) {
-    this.nome = nome;
-    this.notas = [];
-    this.faltas = 0;
-    this.media = 0;
-    this.situacao = '';
+interface Materia {
+  nome: string;
+  notas: number[];
+  media: number;
+  situacao: string;
+}
+
+const materias = ['Matemática', 'Português', 'Geografia', 'História', 'Química'];
+const boletim: Materia[] = [];
+let nomeAluno: string;
+let serie: string;
+let totalFaltas: number;
+let situacaoFinal: string;
+
+function pergunta(query: string): Promise<string> {
+  return new Promise(resolve => rl.question(query, resolve));
+}
+
+function calcularMedia(notas: number[]): number {
+  const soma = notas.reduce((acc, nota) => acc + nota, 0);
+  return soma / notas.length;
+}
+
+async function coletarNotas(materia: string): Promise<number[]> {
+  const notas: number[] = [];
+  console.log(`\n--- ${materia} ---`);
+  
+  for (let i = 1; i <= 8; i++) {
+    let notaValida = false;
+    while (!notaValida) {
+      const input = await pergunta(`Digite a nota ${i}: `);
+      const nota = parseFloat(input);
+      
+      if (!isNaN(nota) && nota >= 0 && nota <= 10) {
+        notas.push(nota);
+        notaValida = true;
+      } else {
+        console.log('Nota inválida! Digite um valor entre 0 e 10.');
+      }
+    }
   }
+  
+  return notas;
+}
 
-  public adicionarNota(nota: number): void {
-    this.notas.push(nota);
+async function iniciarSistema() {
+  console.log('=== SISTEMA DE BOLETIM ESCOLAR ===\n');
+  
+  nomeAluno = await pergunta('Digite o nome do aluno: ');
+  serie = await pergunta('Digite a série: ');
+  
+  // Coletar notas de todas as matérias
+  for (const materia of materias) {
+    const notas = await coletarNotas(materia);
+    const media = calcularMedia(notas);
+    const situacao = media >= 7 ? 'APROVADO' : 'REPROVADO';
+    
+    boletim.push({
+      nome: materia,
+      notas,
+      media,
+      situacao
+    });
   }
-
-  public setFaltas(faltas: number): void {
-    this.faltas = faltas;
-  }
-
-  public calcularMedia(): void {
-    const soma = this.notas.reduce((acc, nota) => acc + nota, 0);
-    this.media = soma / this.notas.length;
-  }
-
-  public determinarSituacao(totalAulas: number = 80): void {
-    const percentualFaltas = (this.faltas / totalAulas) * 100;
-
-    if (percentualFaltas > 25) {
-      this.situacao = 'REPROVADO POR FALTA';
-    } else if (this.media >= 7) {
-      this.situacao = 'APROVADO';
-    } else if (this.media >= 5) {
-      this.situacao = 'RECUPERAÇÃO';
+  
+  // Coletar faltas
+  let faltasValidas = false;
+  while (!faltasValidas) {
+    const input = await pergunta('\nDigite o total de faltas do aluno: ');
+    totalFaltas = parseInt(input);
+    
+    if (!isNaN(totalFaltas) && totalFaltas >= 0) {
+      faltasValidas = true;
     } else {
-      this.situacao = 'REPROVADO';
+      console.log('Número de faltas inválido!');
     }
   }
-
-  public getNome(): string {
-    return this.nome;
+  
+  // Calcular situação final (considerando 200 dias letivos = 100%)
+  const diasLetivos = 200;
+  const percentualFaltas = (totalFaltas / diasLetivos) * 100;
+  const reprovadoPorFalta = percentualFaltas > 25; // Mais de 25% de faltas = reprovado
+  
+  // Verificar se foi reprovado em alguma matéria
+  const reprovadoPorNota = boletim.some(m => m.situacao === 'REPROVADO');
+  
+  if (reprovadoPorFalta) {
+    situacaoFinal = 'REPROVADO POR FALTAS';
+  } else if (reprovadoPorNota) {
+    situacaoFinal = 'REPROVADO';
+  } else {
+    situacaoFinal = 'APROVADO';
   }
-
-  public getNotas(): number[] {
-    return this.notas;
-  }
-
-  public getFaltas(): number {
-    return this.faltas;
-  }
-
-  public getMedia(): number {
-    return this.media;
-  }
-
-  public getSituacao(): string {
-    return this.situacao;
-  }
-
-  public exibirDetalhes(): void {
-    console.log(`\nDisciplina: ${this.nome}`);
-    console.log(`  Notas: ${this.notas.map(n => n.toFixed(1)).join(' | ')}`);
-    console.log(`  Média: ${this.media.toFixed(2)}`);
-    console.log(`  Faltas: ${this.faltas}`);
-    console.log(`  Situação: ${this.situacao}`);
-    console.log('─'.repeat(70));
-  }
+  
+  // Exibir boletim na tela
+  exibirBoletim(percentualFaltas);
+  
+  // Salvar em arquivo
+  await salvarBoletim(percentualFaltas);
+  
+  console.log('\n✓ Boletim salvo com sucesso na pasta "bd"!');
+  rl.close();
 }
 
-class Aluno {
-  private nome: string;
-  private disciplinas: Disciplina[];
-
-  constructor(nome: string) {
-    this.nome = nome;
-    this.disciplinas = [];
-  }
-
-  public adicionarDisciplina(disciplina: Disciplina): void {
-    this.disciplinas.push(disciplina);
-  }
-
-  public getNome(): string {
-    return this.nome;
-  }
-
-  public getDisciplinas(): Disciplina[] {
-    return this.disciplinas;
-  }
-
-  public calcularMediaGeral(): number {
-    const soma = this.disciplinas.reduce((acc, disc) => acc + disc.getMedia(), 0);
-    return soma / this.disciplinas.length;
-  }
-
-  public calcularTotalFaltas(): number {
-    return this.disciplinas.reduce((acc, disc) => acc + disc.getFaltas(), 0);
-  }
-
-  public contarReprovacoes(): number {
-    return this.disciplinas.filter(disc => 
-      disc.getSituacao() === 'REPROVADO' || 
-      disc.getSituacao() === 'REPROVADO POR FALTA'
-    ).length;
-  }
-
-  public temRecuperacao(): boolean {
-    return this.disciplinas.some(disc => disc.getSituacao() === 'RECUPERAÇÃO');
-  }
-
-  public processarNotas(): void {
-    this.disciplinas.forEach(disciplina => {
-      disciplina.calcularMedia();
-      disciplina.determinarSituacao();
-    });
-  }
+function exibirBoletim(percentualFaltas: number) {
+  console.log('\n\n' + '='.repeat(70));
+  console.log('                        BOLETIM ESCOLAR');
+  console.log('='.repeat(70));
+  console.log(`Aluno: ${nomeAluno}`);
+  console.log(`Série: ${serie}`);
+  console.log('='.repeat(70));
+  console.log('\nDESEMPENHO POR DISCIPLINA:\n');
+  
+  boletim.forEach(materia => {
+    console.log(`${materia.nome}:`);
+    console.log(`  Notas: ${materia.notas.map(n => n.toFixed(1)).join(' | ')}`);
+    console.log(`  Média: ${materia.media.toFixed(2)}`);
+    console.log(`  Situação: ${materia.situacao}`);
+    console.log('-'.repeat(70));
+  });
+  
+  console.log(`\nTotal de Faltas: ${totalFaltas} (${percentualFaltas.toFixed(1)}%)`);
+  console.log(`Frequência: ${(100 - percentualFaltas).toFixed(1)}%`);
+  console.log('\n' + '='.repeat(70));
+  console.log(`SITUAÇÃO FINAL: ${situacaoFinal}`);
+  console.log('='.repeat(70));
 }
 
-class Boletim {
-  private aluno: Aluno;
-
-  constructor(aluno: Aluno) {
-    this.aluno = aluno;
+async function salvarBoletim(percentualFaltas: number) {
+  const pastabd = path.join(process.cwd(), 'bd');
+  
+  // Criar pasta bd se não existir
+  if (!fs.existsSync(pastabd)) {
+    fs.mkdirSync(pastabd);
   }
-
-  public exibir(): void {
-    console.log('\n╔════════════════════════════════════════════════════════════════╗');
-    console.log('║                    BOLETIM ESCOLAR 2025                        ║');
-    console.log('╚════════════════════════════════════════════════════════════════╝');
-    console.log(`\nAluno: ${this.aluno.getNome()}`);
-    console.log('─'.repeat(70));
-
-    this.aluno.getDisciplinas().forEach(disciplina => {
-      disciplina.exibirDetalhes();
-    });
-
-    this.exibirResultadoFinal();
-  }
-
-  private exibirResultadoFinal(): void {
-    console.log('\n╔════════════════════════════════════════════════════════════════╗');
-    console.log('║                        RESULTADO FINAL                         ║');
-    console.log('╚════════════════════════════════════════════════════════════════╝');
-    console.log(`Média Geral: ${this.aluno.calcularMediaGeral().toFixed(2)}`);
-    console.log(`Total de Faltas: ${this.aluno.calcularTotalFaltas()}`);
-
-    const reprovacoes = this.aluno.contarReprovacoes();
-
-    if (reprovacoes > 0) {
-      console.log(`\n⚠️  SITUAÇÃO FINAL: REPROVADO (${reprovacoes} disciplina(s))`);
-    } else if (this.aluno.temRecuperacao()) {
-      console.log('\n📝 SITUAÇÃO FINAL: RECUPERAÇÃO');
-    } else {
-      console.log('\n✅ SITUAÇÃO FINAL: APROVADO');
-    }
-
-    console.log('\n' + '═'.repeat(70));
-  }
+  
+  // Gerar nome do arquivo
+  const dataHora = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+  const nomeArquivo = `boletim_${nomeAluno.replace(/\s+/g, '_')}_${dataHora}.txt`;
+  const caminhoArquivo = path.join(pastabd, nomeArquivo);
+  
+  // Montar conteúdo do arquivo
+  let conteudo = '';
+  conteudo += '='.repeat(70) + '\n';
+  conteudo += '                        BOLETIM ESCOLAR\n';
+  conteudo += '='.repeat(70) + '\n';
+  conteudo += `Aluno: ${nomeAluno}\n`;
+  conteudo += `Série: ${serie}\n`;
+  conteudo += `Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}\n`;
+  conteudo += '='.repeat(70) + '\n\n';
+  conteudo += 'DESEMPENHO POR DISCIPLINA:\n\n';
+  
+  boletim.forEach(materia => {
+    conteudo += `${materia.nome}:\n`;
+    conteudo += `  Notas: ${materia.notas.map(n => n.toFixed(1)).join(' | ')}\n`;
+    conteudo += `  Média: ${materia.media.toFixed(2)}\n`;
+    conteudo += `  Situação: ${materia.situacao}\n`;
+    conteudo += '-'.repeat(70) + '\n';
+  });
+  
+  conteudo += `\nTotal de Faltas: ${totalFaltas} (${percentualFaltas.toFixed(1)}%)\n`;
+  conteudo += `Frequência: ${(100 - percentualFaltas).toFixed(1)}%\n`;
+  conteudo += '\n' + '='.repeat(70) + '\n';
+  conteudo += `SITUAÇÃO FINAL: ${situacaoFinal}\n`;
+  conteudo += '='.repeat(70) + '\n';
+  
+  // Salvar arquivo
+  fs.writeFileSync(caminhoArquivo, conteudo, 'utf-8');
 }
 
-class SistemaBoletim {
-  private rl: readline.Interface;
-
-  constructor() {
-    this.rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout
-    });
-  }
-
-  private pergunta(questao: string): Promise<string> {
-    return new Promise((resolve) => {
-      this.rl.question(questao, (resposta) => {
-        resolve(resposta);
-      });
-    });
-  }
-
-  private async coletarDadosDisciplina(nomeDisciplina: string): Promise<Disciplina> {
-    console.log(`\n--- ${nomeDisciplina} ---`);
-
-    const disciplina = new Disciplina(nomeDisciplina);
-
-    const nota1 = parseFloat(await this.pergunta('Nota do 1º bimestre: '));
-    const nota2 = parseFloat(await this.pergunta('Nota do 2º bimestre: '));
-    const nota3 = parseFloat(await this.pergunta('Nota do 3º bimestre: '));
-    const nota4 = parseFloat(await this.pergunta('Nota do 4º bimestre: '));
-    const faltas = parseInt(await this.pergunta('Número de faltas: '));
-
-    disciplina.adicionarNota(nota1);
-    disciplina.adicionarNota(nota2);
-    disciplina.adicionarNota(nota3);
-    disciplina.adicionarNota(nota4);
-    disciplina.setFaltas(faltas);
-
-    return disciplina;
-  }
-
-  public async executar(): Promise<void> {
-    console.log('═'.repeat(70));
-    console.log('          SISTEMA DE BOLETIM ESCOLAR');
-    console.log('═'.repeat(70));
-
-    const nomeAluno = await this.pergunta('\nNome do aluno: ');
-    const aluno = new Aluno(nomeAluno);
-
-    const numDisciplinas = parseInt(await this.pergunta('Quantas disciplinas? '));
-
-    for (let i = 0; i < numDisciplinas; i++) {
-      const nomeDisciplina = await this.pergunta(`\nNome da disciplina ${i + 1}: `);
-      const disciplina = await this.coletarDadosDisciplina(nomeDisciplina);
-      aluno.adicionarDisciplina(disciplina);
-    }
-
-    aluno.processarNotas();
-
-    const boletim = new Boletim(aluno);
-    boletim.exibir();
-
-    this.rl.close();
-  }
-}
-
-// Execução do programa
-const sistema = new SistemaBoletim();
-sistema.executar();
+// Iniciar o sistema
+iniciarSistema().catch(err => {
+  console.error('Erro:', err);
+  rl.close();
+});
