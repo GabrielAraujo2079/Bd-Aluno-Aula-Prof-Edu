@@ -254,3 +254,5 @@ iniciarSistema().catch(err => {
   console.error('Erro:', err);
   rl.close();
 });
+
+// Teste
