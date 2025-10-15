@@ -11,4 +11,16 @@ Proposta da Atividade: Criar uma aplicação em typescript capaz de calcular fal
 
 
 
-#
+# Criar pasta do projeto
+mkdir meu-projeto-ts
+cd meu-projeto-ts
+
+# Iniciar o projeto node
+npm init -y
+
+# Instalar Typescript
+npm install typescript --save-dev
+npm install -D @types/node
+
+# Inicializar Configuração do TS
+npx tsc --init
