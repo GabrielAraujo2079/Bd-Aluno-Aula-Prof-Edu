@@ -14,12 +14,26 @@ interface Materia {
   situacao: string;
 }
 
+interface AlunoCSV {
+  id: number;
+  nome: string;
+  serie: string;
+  dataRegistro: string;
+  situacaoFinal: string;
+  mediaGeral: number;
+  totalFaltas: number;
+  frequencia: number;
+}
+
 const materias = ['Matemática', 'Português', 'Geografia', 'História', 'Química'];
 const boletim: Materia[] = [];
 let nomeAluno: string;
 let serie: string;
 let totalFaltas: number;
 let situacaoFinal: string;
+
+const PASTA_BD = path.join(process.cwd(), 'bd');
+const ARQUIVO_CSV = path.join(PASTA_BD, 'alunos.csv');
 
 function pergunta(query: string): Promise<string> {
   return new Promise(resolve => rl.question(query, resolve));
@@ -52,8 +66,48 @@ async function coletarNotas(materia: string): Promise<number[]> {
   return notas;
 }
 
+function criarPastaSeNaoExistir() {
+  if (!fs.existsSync(PASTA_BD)) {
+    fs.mkdirSync(PASTA_BD);
+  }
+}
+
+function inicializarCSV() {
+  criarPastaSeNaoExistir();
+  
+  if (!fs.existsSync(ARQUIVO_CSV)) {
+    const cabecalho = 'ID,Nome,Serie,Data_Registro,Situacao_Final,Media_Geral,Total_Faltas,Frequencia\n';
+    fs.writeFileSync(ARQUIVO_CSV, cabecalho, 'utf-8');
+  }
+}
+
+function obterProximoID(): number {
+  if (!fs.existsSync(ARQUIVO_CSV)) {
+    return 1;
+  }
+  
+  const conteudo = fs.readFileSync(ARQUIVO_CSV, 'utf-8');
+  const linhas = conteudo.trim().split('\n');
+  
+  if (linhas.length <= 1) {
+    return 1;
+  }
+  
+  const ultimaLinha = linhas[linhas.length - 1];
+  const primeiroValor = ultimaLinha.split(',')[0];
+  return parseInt(primeiroValor) + 1;
+}
+
+function salvarAlunoNoCSV(alunoData: AlunoCSV) {
+  const linha = `${alunoData.id},${alunoData.nome},${alunoData.serie},${alunoData.dataRegistro},${alunoData.situacaoFinal},${alunoData.mediaGeral.toFixed(2)},${alunoData.totalFaltas},${alunoData.frequencia.toFixed(1)}%\n`;
+  fs.appendFileSync(ARQUIVO_CSV, linha, 'utf-8');
+}
+
 async function iniciarSistema() {
   console.log('=== SISTEMA DE BOLETIM ESCOLAR ===\n');
+  
+  // Inicializar CSV
+  inicializarCSV();
   
   nomeAluno = await pergunta('Digite o nome do aluno: ');
   serie = await pergunta('Digite a série: ');
@@ -88,6 +142,7 @@ async function iniciarSistema() {
   // Calcular situação final (considerando 200 dias letivos = 100%)
   const diasLetivos = 200;
   const percentualFaltas = (totalFaltas / diasLetivos) * 100;
+  const frequencia = 100 - percentualFaltas;
   const reprovadoPorFalta = percentualFaltas > 25; // Mais de 25% de faltas = reprovado
   
   // Verificar se foi reprovado em alguma matéria
@@ -101,13 +156,31 @@ async function iniciarSistema() {
     situacaoFinal = 'APROVADO';
   }
   
+  // Calcular média geral
+  const mediaGeral = calcularMedia(boletim.map(m => m.media));
+  
   // Exibir boletim na tela
   exibirBoletim(percentualFaltas);
   
-  // Salvar em arquivo
+  // Salvar em arquivo TXT
   await salvarBoletim(percentualFaltas);
   
+  // Salvar no CSV
+  const alunoData: AlunoCSV = {
+    id: obterProximoID(),
+    nome: nomeAluno,
+    serie: serie,
+    dataRegistro: new Date().toLocaleDateString('pt-BR'),
+    situacaoFinal: situacaoFinal,
+    mediaGeral: mediaGeral,
+    totalFaltas: totalFaltas,
+    frequencia: frequencia
+  };
+  
+  salvarAlunoNoCSV(alunoData);
+  
   console.log('\n✓ Boletim salvo com sucesso na pasta "bd"!');
+  console.log(`✓ Dados do aluno registrados no arquivo CSV (ID: ${alunoData.id})`);
   rl.close();
 }
 
@@ -128,7 +201,9 @@ function exibirBoletim(percentualFaltas: number) {
     console.log('-'.repeat(70));
   });
   
-  console.log(`\nTotal de Faltas: ${totalFaltas} (${percentualFaltas.toFixed(1)}%)`);
+  const mediaGeral = calcularMedia(boletim.map(m => m.media));
+  console.log(`\nMédia Geral: ${mediaGeral.toFixed(2)}`);
+  console.log(`Total de Faltas: ${totalFaltas} (${percentualFaltas.toFixed(1)}%)`);
   console.log(`Frequência: ${(100 - percentualFaltas).toFixed(1)}%`);
   console.log('\n' + '='.repeat(70));
   console.log(`SITUAÇÃO FINAL: ${situacaoFinal}`);
@@ -136,17 +211,12 @@ function exibirBoletim(percentualFaltas: number) {
 }
 
 async function salvarBoletim(percentualFaltas: number) {
-  const pastabd = path.join(process.cwd(), 'bd');
-  
-  // Criar pasta bd se não existir
-  if (!fs.existsSync(pastabd)) {
-    fs.mkdirSync(pastabd);
-  }
+  criarPastaSeNaoExistir();
   
   // Gerar nome do arquivo
   const dataHora = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
   const nomeArquivo = `boletim_${nomeAluno.replace(/\s+/g, '_')}_${dataHora}.txt`;
-  const caminhoArquivo = path.join(pastabd, nomeArquivo);
+  const caminhoArquivo = path.join(PASTA_BD, nomeArquivo);
   
   // Montar conteúdo do arquivo
   let conteudo = '';
@@ -167,7 +237,9 @@ async function salvarBoletim(percentualFaltas: number) {
     conteudo += '-'.repeat(70) + '\n';
   });
   
-  conteudo += `\nTotal de Faltas: ${totalFaltas} (${percentualFaltas.toFixed(1)}%)\n`;
+  const mediaGeral = calcularMedia(boletim.map(m => m.media));
+  conteudo += `\nMédia Geral: ${mediaGeral.toFixed(2)}\n`;
+  conteudo += `Total de Faltas: ${totalFaltas} (${percentualFaltas.toFixed(1)}%)\n`;
   conteudo += `Frequência: ${(100 - percentualFaltas).toFixed(1)}%\n`;
   conteudo += '\n' + '='.repeat(70) + '\n';
   conteudo += `SITUAÇÃO FINAL: ${situacaoFinal}\n`;
